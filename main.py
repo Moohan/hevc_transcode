@@ -1,8 +1,8 @@
+import argparse
+import logging
 import subprocess
 from pathlib import Path
 from tqdm import tqdm
-import argparse
-import logging
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
