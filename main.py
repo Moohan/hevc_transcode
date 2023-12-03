@@ -55,6 +55,7 @@ def transcode_to_hevc(input_file):
         Path: The path to the output HEVC-encoded file.
     """
     output_file = input_file.with_suffix(".mp4")
+    output_file = output_file.with_name(f"TEMP_{output_file.name}")
     input_path = str(input_file)
     output_path = str(output_file)
 
@@ -129,8 +130,14 @@ def main(target_directory, dry_run=False):
 
     for video_file in tqdm(video_files, desc="Transcoding", unit="file"):
         if not is_hevc(video_file):
-            transcode_to_hevc(video_file)
+            output_file = transcode_to_hevc(video_file)
             transcode_count += 1
+
+            # Rename temp file to original file name
+            output_file.rename(video_file)
+
+            # Delete original file
+            video_file.unlink()
 
     logger.info(
         f"Transcoding complete. {transcode_count}/{total_files} files transcoded."
