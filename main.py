@@ -3,12 +3,12 @@ import logging
 import subprocess
 from pathlib import Path
 
-from tqdm import tqdm
+# Additional import for better error reporting
+from subprocess import CalledProcessError
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
 
 # Function to check if a file is already in HEVC format
 def is_hevc(file_path):
@@ -36,12 +36,12 @@ def is_hevc(file_path):
                 str(file_path),
             ]
         )
-        return b"hevc" in codec_info.lower() or b"h265" in codec_info.lower()
+        # Use decode('utf-8') to handle bytes object and perform case-insensitive check
+        return "hevc" in codec_info.decode('utf-8').lower() or "h265" in codec_info.decode('utf-8').lower()
     except subprocess.CalledProcessError as e:
         logger.error(f"Error checking file: {file_path}")
         logger.error(e)
         return False
-
 
 # Function to transcode a video file to HEVC
 def transcode_to_hevc(input_file):
@@ -58,39 +58,41 @@ def transcode_to_hevc(input_file):
     input_path = str(input_file)
     output_path = str(output_file)
 
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-i",
-            input_path,
-            "-c:v",
-            "libx265",
-            "-crf",
-            "23",
-            "-preset",
-            "medium",
-            "-vf",
-            "scale=min(iw\\,1920):-2",  # Limit resolution to 1080p
-            "-c:a",
-            "aac",
-            "-b:a",
-            "128k",
-            "-movflags",
-            "+faststart",  # Enable faststart for streaming
-            "-pix_fmt",
-            "yuv420p",  # Optimal pixel format for compatibility
-            "-profile:v",
-            "main",  # Main profile for wider compatibility
-            "-level",
-            "4.0",  # Level 4.0 for compatibility with Google TV
-            output_path,
-        ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    try:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-i",
+                input_path,
+                "-c:v",
+                "libx265",
+                "-crf",
+                "23",
+                "-preset",
+                "medium",
+                "-vf",
+                "scale=min(iw\\,1920):-2",  # Limit resolution to 1080p
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-movflags",
+                "+faststart",  # Enable faststart for streaming
+                "-pix_fmt",
+                "yuv420p",  # Optimal pixel format for compatibility
+                "-profile:v",
+                "main",  # Main profile for wider compatibility
+                "-level",
+                "4.0",  # Level 4.0 for compatibility with Google TV
+                output_path,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except CalledProcessError as e:
+        logger.error(f"Error during transcoding: {e}")
 
     return output_file
-
 
 # Main function
 def main(target_directory, dry_run=False):
@@ -114,28 +116,31 @@ def main(target_directory, dry_run=False):
     total_files = len(video_files)
     transcode_count = 0
 
-    if dry_run:
-        logger.info(f"Total files found: {total_files}")
-        logger.info("Calculating files to be transcoded...")
+    # Use a try-except block to handle KeyboardInterrupt
+    try:
+        if dry_run:
+            logger.info(f"Total files found: {total_files}")
+            logger.info("Calculating files to be transcoded...")
 
-        for video_file in tqdm(video_files, desc="Checking", unit="file"):
+            for video_file in video_files:
+                if not is_hevc(video_file):
+                    transcode_count += 1
+
+            logger.info(
+                f"{transcode_count}/{total_files} files would be transcoded ({(transcode_count / total_files) * 100:.2f}%)."
+            )
+            return
+
+        for video_file in video_files:
             if not is_hevc(video_file):
+                transcode_to_hevc(video_file)
                 transcode_count += 1
 
         logger.info(
-            f"{transcode_count}/{total_files} files would be transcoded ({(transcode_count / total_files) * 100:.2f}%)."
+            f"Transcoding complete. {transcode_count}/{total_files} files transcoded."
         )
-        return
-
-    for video_file in tqdm(video_files, desc="Transcoding", unit="file"):
-        if not is_hevc(video_file):
-            transcode_to_hevc(video_file)
-            transcode_count += 1
-
-    logger.info(
-        f"Transcoding complete. {transcode_count}/{total_files} files transcoded."
-    )
-
+    except KeyboardInterrupt:
+        logger.warning("Transcoding interrupted by user.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Batch transcode video files to HEVC.")
